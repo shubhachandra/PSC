@@ -1,4 +1,288 @@
-# PSC
+Got it, Shubh 👍
+Private Service Connect (PSC) has a lot of jargon, and most docs explain pieces but not the whole mental model. Let’s break every important PSC term in a clean, layered way — from why it exists → how traffic flows → what each resource actually means.
+
+I’ll focus on GCP PSC, since that’s what you work with.
+
+⸻
+
+1️⃣ What is Private Service Connect (PSC) — in one line
+
+PSC lets a consumer VPC privately access a service hosted in another project or VPC, using Google’s internal network, without VPC peering.
+
+No public IPs.
+No peering.
+No overlapping IP headache.
+
+⸻
+
+2️⃣ Two sides of PSC (this is CRITICAL)
+
+PSC always has two roles:
+
+Role	Meaning
+Producer	The project/VPC that hosts the service
+Consumer	The project/VPC that accesses the service
+
+Think of it as publisher → subscriber.
+
+⸻
+
+3️⃣ High-level traffic flow (mental picture)
+
+Consumer VM
+   ↓
+PSC Endpoint (Forwarding Rule + Internal IP)
+   ↓
+Google Backbone
+   ↓
+Service Attachment
+   ↓
+Producer Backend (NEG / VM / On-prem)
+
+Everything below is just plumbing to make this path work.
+
+⸻
+
+4️⃣ Core PSC terms (MUST know)
+
+🔹 Service Attachment
+
+Heart of PSC (Producer side)
+	•	Represents “this service can be consumed privately”
+	•	Created by the producer
+	•	Points to a regional backend service
+	•	Defines:
+	•	Who can connect (projects / org / allow list)
+	•	Connection preference (auto / manual approval)
+
+👉 Without a Service Attachment, PSC does not exist.
+
+⸻
+
+🔹 PSC Endpoint
+
+Entry point on Consumer side
+
+This is what the consumer actually creates.
+
+PSC Endpoint =
+➡ Internal Forwarding Rule
+➡ Internal IP Address
+➡ Target = Service Attachment
+
+From consumer POV:
+
+“I hit this internal IP and magically reach the producer service.”
+
+⸻
+
+🔹 Forwarding Rule (PSC type)
+	•	Internal forwarding rule
+	•	Special mode: PSC
+	•	Listens on a port (or port range)
+	•	Routes traffic to service attachment, not backend directly
+
+⚠️ This is not a load balancer in the consumer project.
+
+⸻
+
+🔹 Internal IP Address (Consumer)
+	•	Allocated in consumer subnet
+	•	Stable entry point
+	•	DNS usually maps to this IP
+
+Example:
+
+my-service.internal → 10.20.0.5
+
+
+⸻
+
+5️⃣ Backend concepts (Producer side)
+
+🔹 Backend Service (Regional)
+	•	Ties traffic to actual backends
+	•	PSC requires regional backend services
+	•	Can point to:
+	•	Zonal NEGs
+	•	Internet NEGs
+	•	Hybrid NEGs (on-prem)
+
+PSC does not talk to VMs directly.
+
+⸻
+
+🔹 Network Endpoint Group (NEG)
+
+A NEG is a list of service endpoints, not instances.
+
+Types you’ll see in PSC:
+
+NEG Type	Used for
+Zonal NEG	VM-based services
+Internet NEG	External services
+Hybrid NEG	On-prem services
+
+For on-prem PSC → Hybrid NEG is king 👑
+
+⸻
+
+🔹 Endpoint (inside NEG)
+
+An endpoint is usually:
+	•	IP + Port (on-prem)
+	•	VM IP + Port (GCE)
+
+Example:
+
+10.1.10.20:443
+
+
+⸻
+
+6️⃣ NAT Subnets (very misunderstood)
+
+🔹 PSC NAT Subnet
+	•	Exists in producer VPC
+	•	Used for source NAT
+	•	Google uses IPs from this subnet when sending traffic to backend
+
+Why needed?
+	•	Consumer IPs are hidden
+	•	Producer sees traffic as coming from NAT range
+
+Think:
+
+“PSC traffic enters my VPC using these IPs.”
+
+⸻
+
+7️⃣ Connection concepts
+
+🔹 PSC Connection
+	•	Created automatically when consumer creates endpoint
+	•	Represents logical relationship:
+	•	Consumer project
+	•	Service attachment
+	•	Forwarding rule
+
+⸻
+
+🔹 Connection Preference
+
+Defined on Service Attachment:
+
+Mode	Meaning
+ACCEPT_AUTOMATIC	Anyone allowed can connect
+ACCEPT_MANUAL	Producer must approve each connection
+
+Manual mode = security + governance control.
+
+⸻
+
+🔹 Consumer Accept List
+	•	Projects / orgs allowed to connect
+	•	Prevents random consumers
+
+⸻
+
+8️⃣ Load Balancing pieces (Producer)
+
+Depending on protocol:
+
+🔹 Target Proxy
+	•	targetTcpProxy
+	•	targetSslProxy
+	•	targetHttpsProxy
+
+PSC typically uses:
+	•	TCP Proxy (L4)
+	•	SSL Proxy (L4 encrypted)
+
+⸻
+
+🔹 Health Checks
+	•	Required for backend service
+	•	Can be TCP / HTTP / HTTPS
+	•	Decide endpoint health
+
+⸻
+
+9️⃣ DNS terms (important in real life)
+
+🔹 Private DNS Zone (Consumer)
+	•	Maps service name → PSC IP
+	•	Example:
+
+db.internal.company.com → 10.20.0.5
+
+
+
+PSC itself does not create DNS.
+
+⸻
+
+🔟 Security & Networking boundaries
+
+🔹 No VPC Peering
+
+PSC ≠ Peering
+No route exchange
+No firewall sharing
+
+⸻
+
+🔹 Firewall Rules
+	•	Consumer: allow traffic to PSC IP
+	•	Producer: allow traffic from NAT subnet
+
+⸻
+
+1️⃣1️⃣ On-prem PSC specific terms (your area)
+
+Since you work with psc-publish-onprem 👇
+
+🔹 Hybrid Connectivity
+
+PSC +:
+	•	VPN
+	•	Interconnect
+
+Required for traffic to reach on-prem endpoints.
+
+⸻
+
+🔹 On-prem Service Publishing
+
+Means:
+
+“Expose an on-prem service to multiple GCP consumers privately.”
+
+PSC is perfect for this use case.
+
+⸻
+
+1️⃣2️⃣ Common misconceptions (important)
+
+❌ PSC is not a load balancer
+❌ PSC does not require peering
+❌ Consumer cannot see producer VPC
+❌ Producer does not see consumer IPs
+✅ PSC is service-level connectivity
+
+⸻
+
+1️⃣3️⃣ If you want, next steps 🚀
+
+I can:
+	1.	Draw an ASCII architecture for your on-prem PSC module
+	2.	Explain each Terraform resource you use, line-by-line
+	3.	Compare PSC vs Peering vs Shared VPC
+	4.	Explain failure modes & troubleshooting
+
+Just tell me what you want next 😄
+
+PSC
 Great, now we’re on the producer side 👌
 I’ll explain how you publish a service using “Published services” in PSC, step-by-step, in plain Cloud SQL / Apigee-style terms, but applied to your own service.
 
