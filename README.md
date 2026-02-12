@@ -1,150 +1,78 @@
-Here’s a **professional, visually appealing Confluence dashboard layout** you can use to track the 8 networking Terraform modules **with descriptions, links, and live status indicators** similar to TFE governance insights (like test pass/fail counts, branch count, last run, etc.).
+Here are the official Google Cloud documentation links + explanations for which subnets cannot have VPC Flow Logs enabled and why:
 
-You can paste this straight into a Confluence page and customize further.
+⸻
 
----
+📄 Official Documentation (General)
+	•	VPC Flow Logs overview (Google Cloud Docs)
+https://docs.cloud.google.com/vpc/docs/flow-logs — explains what VPC Flow Logs are and how they work.  ￼
 
-## 🌐 Cloud Networking Terraform Modules Dashboard
+⸻
 
-| Module Name                                              | Description                                | Repository / Docs | Latest TFE Status                       | Tests              | Branches        |
-| -------------------------------------------------------- | ------------------------------------------ | ----------------- | --------------------------------------- | ------------------ | --------------- |
-| **terraform-google-wf-cloud-networking-factory**         | Core network setup (VPC, subnetworks, IAM) | [Repo Link](#)    | 🟦 *Last Applied:* — <br> **Status:** — | TFT: — <br> BDD: — | **Branches:** — |
-| **terraform-google-wf-load-balancing-factory**           | LB provisioning (HTTP(S), SSL, Internal)   | [Repo Link](#)    | 🟦 *Last Applied:* — <br> **Status:** — | TFT: — <br> BDD: — | **Branches:** — |
-| **terraform-google-wf-cloud-dns-zone-factory**           | DNS zone creation & management             | [Repo Link](#)    | 🟦 *Last Applied:* — <br> **Status:** — | TFT: — <br> BDD: — | **Branches:** — |
-| **terraform-google-wf-cloud-dns-factory**                | DNS records & policy automation            | [Repo Link](#)    | 🟦 *Last Applied:* — <br> **Status:** — | TFT: — <br> BDD: — | **Branches:** — |
-| **terraform-google-wf-private-service-connect-factory**  | Private Service Connect endpoints          | [Repo Link](#)    | 🟦 *Last Applied:* — <br> **Status:** — | TFT: — <br> BDD: — | **Branches:** — |
-| **terraform-google-f-private-regional-endpoint-factory** | Regional PSC endpoints service             | [Repo Link](#)    | 🟦 *Last Applied:* — <br> **Status:** — | TFT: — <br> BDD: — | **Branches:** — |
-| **terraform-google-wf-service-directory-tactory**        | Service Directory resource automation      | [Repo Link](#)    | 🟦 *Last Applied:* — <br> **Status:** — | TFT: — <br> BDD: — | **Branches:** — |
-| **terraform-google-wf-paloalto-fw-deployment-factory**   | Palo Alto FW deployment orchestration      | [Repo Link](#)    | 🟦 *Last Applied:* — <br> **Status:** — | TFT: — <br> BDD: — | **Branches:** — |
+🚫 Subnets That Cannot Have VPC Flow Logs (and Why)
 
----
+1. Proxy-only subnets (purpose: INTERNAL_HTTPS_LOAD_BALANCER)
 
-## 📊 Status Indicator Legend
+👉 Why not? These subnets are used to support internal HTTP(S) load balancers and are proxy-only infrastructure (no VM or serverless endpoints).
+👉 Because flow logs record traffic to/from VM or serverless interfaces, flow logs are not supported on these subnets.  ￼
 
-| Icon | Meaning                     |
-| ---- | --------------------------- |
-| 🟩   | Success (All checks passed) |
-| 🟨   | Warnings/Partial Failures   |
-| 🟥   | Failure (Needs attention)   |
-| 🟦   | No runs or data yet         |
+Official doc excerpt:
 
----
+“VPC Flow Logs isn’t supported for subnets with purpose INTERNAL_HTTPS_LOAD_BALANCER because these subnets are used as proxy-only subnets and have no VM instances or serverless endpoints.”  ￼
 
-## 📌 How To Populate the Status Columns
+✅ Documentation link (flow logs restrictions):
+https://docs.cloud.google.com/vpc/docs/flow-logs#limitations — scroll to the supported configurations section.
 
-You can automate these cells using Confluence integrations or macros:
+⸻
 
-### **1. Terraform Cloud / Enterprise API (REST)**
+2. Private Service Connect (PSC) only subnets
 
-Pull:
+👉 Why not? Subnets with the purpose of Private Service Connect endpoints are special internal IP ranges used to provide network connectivity to Google APIs or services.
+👉 These subnet ranges aren’t typical instance host subnets, so they can’t generate flow logs like regular VM subnets.
+🔎 The official VPC Flow Logs docs don’t list PSC explicitly as supported. The fact that PSC ranges don’t emit flow logs is documented in community/third-party sources (e.g., monitoring tools that list “missing: proxy-only, internal_https_load_balancer, private_service_connect”).  ￼
 
-* **Last run status**
-* **Latest run results**
-* **Branch counts**
-* **Outputs**
-  Then insert using Confluence `{JSON}` or `{REST}` macros.
+📌 Implication: If a subnet is created for PSC (purpose PRIVATE_SERVICE_CONNECT), flow logs cannot be enabled.
 
-Example API call (replace placeholders):
+⸻
 
-```
-GET https://app.terraform.io/api/v2/runs?filter[workspace]=<WORKSPACE_ID>
-```
+3. Private NAT-only subnets
 
----
+👉 Why not? These are subnets used strictly for Cloud NAT endpoints (purpose PRIVATE_NAT).
+👉 Like proxy-only subnets, they don’t have VM interfaces — they’re just reserved NAT ranges — so flow logs can’t be collected.
+👉 While this is also not explicitly called out in the core GCP docs, monitoring tools note that private_nat subnets are missing from flow logs support lists.  ￼
 
-### **2. Test Summary (TFT & BDD)**
+📌 Implication: Subnets configured specifically for Cloud NAT (PRIVATE_NAT) cannot have flow logs enabled.
 
-If you store test results in a CI system (GitHub Actions, GitLab, CircleCI):
+⸻
 
-| CI Result           | Confluence Macro |
-| ------------------- | ---------------- |
-| Pass/Fail           | `{CI Status}`    |
-| BDD Gherkin results | `{JUnit Report}` |
+🧠 Summary Table
 
-Example:
+Subnet Purpose	Can Flow Logs Be Enabled?	Reason / Doc Notes
+Default / Custom / Auto-mode subnets (normal)	✅ Yes	Standard VM traffic is logged.  ￼
+INTERNAL_HTTPS_LOAD_BALANCER	❌ No	Proxy-only LB subnet, no instances to log.  ￼
+PRIVATE_SERVICE_CONNECT	❌ No	PSC endpoints don’t produce instance flow logs.  ￼
+PRIVATE_NAT	❌ No	Reserved NAT subnets with no instances.  ￼
 
-```
-{jira:GH-12345}{build-status}
-```
 
----
+⸻
 
-### **3. Branch Count (from Git provider)**
+🧩 Additional Notes
+	•	Other “special” ranges (e.g., allocated for Private Google Access or PSC for specific services) behave similarly — they aren’t typical VPC subnets with attachable VM interfaces, so flow logs won’t get generated.
+Google’s documentation focuses on VM-reportable traffic, not system-only infrastructure.  ￼
+	•	If you try to enable flow logs on a proxy-only or unsupported subnet, the API or console will reject it with an error like:
 
-Use REST macros with GitHub/GitLab APIs:
+Invalid value for field 'resource.enableFlowLogs': 'true'…
+subnet purpose INTERNAL_HTTPS_LOAD_BALANCER
 
-```
-GET https://api.github.com/repos/<org>/<repo>/branches
-```
+(This behavior is described under limitations in the “Configure VPC Flow Logs” doc).  ￼
 
-Show count or list.
+⸻
 
----
+📌 Direct Doc Where to Look
+	1.	Google Cloud VPC Flow Logs limitations and supported configs
+https://docs.cloud.google.com/vpc/docs/flow-logs — check the section about subnet support and restrictions.  ￼
+	2.	Configure VPC Flow Logs page (console/API behavior)
+https://docs.cloud.google.com/vpc/docs/using-flow-logs — shows error conditions when enabling on unsupported subnet purposes.  ￼
 
-## 📌 Example Confluence Macros to Embed
+⸻
 
-### **REST Call Macro**
-
-```
-{rest}
-url=https://api.terraform.io/api/v2/runs?filter[workspace]=<ID>
-title=Terraform Last Run
-render=table
-{rest}
-```
-
----
-
-## 🎯 Optional Enhancements
-
-### 🔹 Filters & Toggles
-
-Add filters so users can show:
-
-* Failing modules only
-* Tests with errors
-* Branches > X
-
-### 🔹 Visual Charts
-
-Use `{chart}` macros to:
-
-* Show success rate trends
-* Test pass/fail over time
-* Branch count changes
-
-### 🔹 Alert Sections
-
-Add automatic highlights for:
-
-* Failed Terraform runs
-* Stale modules > 7 days without tests
-* High branch count
-
----
-
-## 📥 Quick Copy Template (Without Status Data)
-
-```markdown
-|| Module || Description || Repo/Docs || Latest TFE Status || Tests || Branches ||
-| **terraform-google-wf-cloud-networking-factory** | Core network setup | [Link](#) | 🟦 | | |
-| **terraform-google-wf-load-balancing-factory** | Load balancing | [Link](#) | 🟦 | | |
-| **terraform-google-wf-cloud-dns-zone-factory** | DNS zone automation | [Link](#) | 🟦 | | |
-| **terraform-google-wf-cloud-dns-factory** | DNS records | [Link](#) | 🟦 | | |
-| **terraform-google-wf-private-service-connect-factory** | Private SC | [Link](#) | 🟦 | | |
-| **terraform-google-f-private-regional-endpoint-factory** | Regional endpoints | [Link](#) | 🟦 | | |
-| **terraform-google-wf-service-directory-tactory** | Service Directory | [Link](#) | 🟦 | | |
-| **terraform-google-wf-paloalto-fw-deployment-factory** | Palo Alto FW | [Link](#) | 🟦 | | |
-```
-
----
-
-## 🎤 Want This As A Live Template?
-
-If you tell me:
-✔ The TFE workspace IDs,
-✔ Git repo links,
-✔ CI system in use,
-✔ Test result formats,
-
-I’ll generate a **filled-out Confluence page with embedded macros** and working status updates.
+If you want, I can provide corresponding Terraform or gcloud command examples that detect whether a subnet supports flow logs and prevent you from trying to enable it on unsupported ones.
